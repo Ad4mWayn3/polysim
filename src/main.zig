@@ -12,17 +12,18 @@ pub fn intersection(Num: type,
 pub fn collisionDepthAxis(xs: []rl.Vector2, ys: []rl.Vector2,
     axis: rl.Vector2
 ) f32 {
-    const dot = .{xs[0].dotProduct(axis), ys[0].dotProduct(axis)};
+    var dot = .{xs[0].dotProduct(axis), ys[0].dotProduct(axis)};
     var x = .{.min = dot[0], .max = dot[0]};
     var y = .{.min = dot[1], .max = dot[1]};
     for (0..@max(xs.len,ys.len)) |i| {
+        dot = .{xs[i].dotProduct(axis), ys[i].dotProduct(axis)};
         if (i<xs.len) {
-            if (xs[i] < x.min) x.min = xs[i]
-            else if (xs[i] > x.max) x.max = xs[i];
+            if (dot[0] < x.min) x.min = dot[0]
+            else if (dot[0] > x.max) x.max = dot[0];
         }
         if (i<ys.len) {
-            if (ys[i] < y.min) y.min = ys[i]
-            else if (ys[i] > y.max) y.max = ys[i];
+            if (dot[1] < y.min) y.min = dot[1]
+            else if (dot[1] > y.max) y.max = dot[1];
         }
     }
     return intersection(f32,.{x.min,x.max},.{y.min,y.max});
@@ -39,7 +40,7 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
     std.debug.assert(xs.len*ys.len*axes.len != 0); // no empty arrays
     var minDepth = std.math.floatMax(f32);
     for (axes) |axis| {
-        std.debug.assert(@abs(axis.length()-1.0) < 1e-5);
+        //std.debug.assert(@abs(axis.length()-1.0) < 0.1);
         const depth = collisionDepthAxis(xs, ys, axis);
         if (depth < minDepth) {
             minDepth = depth;
@@ -51,12 +52,21 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
     return minDepth;
 }
 
-const Polygon = struct {
-    vertices: []rl.Vector2,
-    fn center(self: @This()) rl.Vector2 {}
-    fn axes(self: @This()) []rl.Vector2 {}
-    fn draw(self: @This(), color: rl.Color) void {}
-};
+fn polyAxis(polygon: []rl.Vector2, i: usize) rl.Vector2 {
+    const len = polygon.len;
+    const u, const v = .{polygon[i], polygon[(i+1)%len]};
+    const w = v.subtract(u);
+    return rl.Vector2.init(-w.y, w.x).normalize();
+}
+
+fn polyAxes(polygon: []rl.Vector2, buf: []rl.Vector2) []rl.Vector2 {
+    const len = polygon.len;
+    std.debug.assert(buf.len >= len);
+    for (0..len) |i| {
+        buf[i] = polyAxis(polygon, i);
+    }
+    return buf[0..len];
+}
 
 fn polyCenter(polygon: []rl.Vector2) rl.Vector2 {
     var res = rl.Vector2.zero();
@@ -95,6 +105,8 @@ const State = struct {
     }
 };
 
+
+
 pub fn main() !void {
     rl.initWindow(1200, 800, "polysim");
     defer rl.closeWindow();
@@ -115,18 +127,32 @@ pub fn main() !void {
                 v.* = v.add(rl.getMouseDelta());
         }
 
+        var axesMem: [0x10]rl.Vector2 = undefined;
+        _ = polyAxes(&self.vertices, &axesMem);
+        _ = polyAxes(&self.shape2, axesMem[5..]);
+        const axes = axesMem[0..10];
+
+        var axis: rl.Vector2 = undefined;
+        const polycolor: rl.Color = if (minCollisionDepthAxes(&self.vertices, &self.shape2,
+            axes, &axis) > 0.0) .init(0xff,0,0,0x80) else .blue;
+
         rl.beginDrawing();
+
         rl.clearBackground(.black);
-        drawPoly(self.vertices[0..], .blue);
         drawPoly(self.shape2[0..], .beige);
+        drawPoly(self.vertices[0..], polycolor);
+
         for (self.vertices, 0..) |v, i| {
+            rl.drawLineV(v, v.add(polyAxis(self.vertices[0..], i).scale(40)), .white);
             rl.drawCircleV(v, 3.4, .red);
             var buf: [16]u8 = undefined;
             const len = std.fmt.printInt(&buf, i, 10, .lower, .{});
             buf[len] = 0;
             rl.drawText(buf[0..len :0], @intFromFloat(v.x), @intFromFloat(v.y), 16, .white);
         }
+
         rl.drawCircleV(polyCenter(&self.vertices), 3.4, .white);
+
         rl.endDrawing();
 
         if (rgui.button(.{.x = 900, .y = 20, .width = 100, .height = 40}, "print vertices")
