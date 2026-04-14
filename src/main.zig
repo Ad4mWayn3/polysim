@@ -52,60 +52,84 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
     return minDepth;
 }
 
-fn polyAxis(polygon: []rl.Vector2, i: usize) rl.Vector2 {
-    const len = polygon.len;
-    const u, const v = .{polygon[i], polygon[(i+1)%len]};
-    const w = v.subtract(u);
-    return rl.Vector2.init(-w.y, w.x).normalize();
-}
 
-fn polyAxes(polygon: []rl.Vector2, buf: []rl.Vector2) []rl.Vector2 {
-    const len = polygon.len;
-    std.debug.assert(buf.len >= len);
-    for (0..len) |i| {
-        buf[i] = polyAxis(polygon, i);
+const Polygon2D = struct {
+    vertices: []rl.Vector2,
+
+    fn init(vertices: []rl.Vector2) @This() { return .{ .vertices = vertices }; }
+    fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
+
+    fn axis(self: @This(), i: usize) rl.Vector2 {
+        const len = self.vertices.len;
+        const u, const v = .{self.vertices[i], self.vertices[(i+1)%len]};
+        const w = v.subtract(u);
+        return rl.Vector2.init(-w.y, w.x).normalize();
     }
-    return buf[0..len];
-}
 
-fn polyCenter(polygon: []rl.Vector2) rl.Vector2 {
-    var res = rl.Vector2.zero();
-    for (polygon) |vertex|
-        res = res.add(vertex);
-    return res.scale(1.0/@as(f32,@floatFromInt(polygon.len)));
-}
-
-fn drawPoly(polygon: []rl.Vector2, color: rl.Color) void { 
-    const c = polyCenter(polygon);
-    const l = polygon.len;
-    for (0..l) |i| {
-        const j = (i+1)%l;
-        rl.drawTriangle(c, polygon[i], polygon[j], color);
+    fn aABB(self: @This()) rl.Rectangle {
+        var xmin = self.vertices[0].x;
+        var xmax = xmin;
+        var ymin = self.vertices[0].y;
+        var ymax = ymin;
+        for (self.vertices[1..]) |v| {
+            if (v.x < xmin) xmin = v.x;
+            if (v.x > xmax) xmax = v.x;
+            if (v.y < ymin) ymin = v.y;
+            if (v.y > ymax) ymax = v.y;
+        }
+        return .{.x=xmin, .y=ymin, .width=@abs(xmax-xmin), .height=ymax-ymin};
     }
-}
+
+    fn axes(self: @This(), buf: []rl.Vector2) []rl.Vector2 {
+        const len = self.vertices.len;
+        std.debug.assert(buf.len >= len);
+        for (0..len) |i| {
+            buf[i] = self.axis(i);
+        }
+        return buf[0..len];
+    }
+
+    fn center(self: @This()) rl.Vector2 {
+        var res = rl.Vector2.zero();
+        for (self.vertices) |vertex|
+            res = res.add(vertex);
+        return res.scale(1.0/@as(f32,@floatFromInt(self.vertices.len)));
+    }
+
+    fn draw(self: @This(), color: rl.Color) void { 
+        const c = self.center();
+        const l = self.vertices.len;
+        for (0..l) |i| {
+            const j = (i+1)%l;
+            rl.drawTriangle(c, self.vertices[i], self.vertices[j], color);
+        }
+    }
+};
 
 const State = struct {
-    vertices: [5]rl.Vector2,
-    shape2: [5]rl.Vector2,
+    vertices: [10]rl.Vector2,
+    polygons: [2]Polygon2D,
     dragging: std.StaticBitSet(5),
+    
     fn init(self: *@This()) void {
-        comptime {
-            if (@TypeOf(self.dragging).bit_length != self.vertices.len)
-                @compileError("bit set doesnt match array lenght");
-        }
         self.vertices = .{
             .{ .x = 90, .y = 40 },
             .{ .x = 47, .y = 203 },
             .{ .x = 155, .y = 293 },
             .{ .x = 368, .y = 140 },
             .{ .x = 302, .y = 55 },
+            .{ .x = 547, .y = 266 },
+            .{ .x = 553, .y = 526 },
+            .{ .x = 772, .y = 575 },
+            .{ .x = 875, .y = 397 },
+            .{ .x = 832, .y = 208 }
         };
-        self.shape2 = .{.{ .x = 547, .y = 266 }, .{ .x = 553, .y = 526 }, .{ .x = 772, .y = 575 }, .{ .x = 875, .y = 397 }, .{ .x = 832, .y = 208 }};
+        self.polygons = .{
+            .init(self.vertices[0..5]),
+            .init(self.vertices[5..]) };
         self.dragging = .initEmpty();
     }
 };
-
-
 
 pub fn main() !void {
     rl.initWindow(1200, 800, "polysim");
@@ -116,7 +140,7 @@ pub fn main() !void {
 
     while (!rl.windowShouldClose()) {
         const mouse = rl.getMousePosition();
-        for (&self.vertices, 0..) |*v, i| {
+        for (self.polygons[0].cast(), 0..) |*v, i| {
             if (rl.isMouseButtonPressed(.left)
                 and rl.checkCollisionPointCircle(mouse, v.*, 3.4)
             ) self.dragging.set(i)
@@ -128,22 +152,23 @@ pub fn main() !void {
         }
 
         var axesMem: [0x10]rl.Vector2 = undefined;
-        _ = polyAxes(&self.vertices, &axesMem);
-        _ = polyAxes(&self.shape2, axesMem[5..]);
+        _ = self.polygons[0].axes(&axesMem);
+        _ = self.polygons[1].axes(axesMem[5..]);
         const axes = axesMem[0..10];
 
         var axis: rl.Vector2 = undefined;
-        const polycolor: rl.Color = if (minCollisionDepthAxes(&self.vertices, &self.shape2,
-            axes, &axis) > 0.0) .init(0xff,0,0,0x80) else .blue;
+        const polycolor: rl.Color = if (minCollisionDepthAxes(self.polygons[0].cast(),
+            self.polygons[1].cast(), axes, &axis) > 0.0) .init(0xff,0,0,0x80) else .blue;
 
         rl.beginDrawing();
 
         rl.clearBackground(.black);
-        drawPoly(self.shape2[0..], .beige);
-        drawPoly(self.vertices[0..], polycolor);
+        self.polygons[1].draw(.beige);
+        self.polygons[0].draw(polycolor);
+        rl.drawRectangleLinesEx(self.polygons[0].aABB(), 2.5, .white);
 
-        for (self.vertices, 0..) |v, i| {
-            rl.drawLineV(v, v.add(polyAxis(self.vertices[0..], i).scale(40)), .white);
+        for (self.polygons[0].cast(), 0..) |v, i| {
+            rl.drawLineV(v, v.add(self.polygons[0].axis(i).scale(40)), .white);
             rl.drawCircleV(v, 3.4, .red);
             var buf: [16]u8 = undefined;
             const len = std.fmt.printInt(&buf, i, 10, .lower, .{});
@@ -151,7 +176,7 @@ pub fn main() !void {
             rl.drawText(buf[0..len :0], @intFromFloat(v.x), @intFromFloat(v.y), 16, .white);
         }
 
-        rl.drawCircleV(polyCenter(&self.vertices), 3.4, .white);
+        rl.drawCircleV(self.polygons[0].center(), 3.4, .white);
 
         rl.endDrawing();
 
