@@ -2,6 +2,8 @@ const std = @import("std");
 const rl = @import("raylib");
 const rgui = @import("raygui");
 
+const tau = std.math.tau;
+
 pub fn intersection(Num: type,
     x: struct{Num,Num}, y: struct{Num,Num},
 ) Num {
@@ -52,12 +54,30 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
     return minDepth;
 }
 
+// f: []T -> U
+// x: []X
+// g: X -> T
+// f map g x
 
 const Polygon2D = struct {
     vertices: []rl.Vector2,
 
-    fn init(vertices: []rl.Vector2) @This() { return .{ .vertices = vertices }; }
     fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
+
+    fn init(vertices: []rl.Vector2) @This() { return .{ .vertices = vertices }; }
+
+    fn transform(self: *@This(), f: rl.Matrix) *@This() {
+        for (self.vertices) |*v|
+            v.* = v.transform(f);
+        return self;
+    }
+
+    fn rotateMatrix(self: @This(), theta: f32) rl.Matrix {
+        const c = self.center();
+        const t = rl.Matrix.translate(-c.x,-c.y,0);
+        const tI = rl.Matrix.translate(c.x,c.y,0);
+        return tI.multiply(.rotateZ(theta)).multiply(t);
+    }
 
     fn axis(self: @This(), i: usize) rl.Vector2 {
         const len = self.vertices.len;
@@ -147,9 +167,18 @@ pub fn main() !void {
             else if (rl.isMouseButtonReleased(.left)) self.dragging.unset(i) ;
             if (self.dragging.isSet(i))
                 v.* = v.add(rl.getMouseDelta());
-            if (rl.isMouseButtonDown(.middle))
-                v.* = v.add(rl.getMouseDelta());
+            // if (rl.isMouseButtonDown(.middle))
+            //     v.* = v.add(rl.getMouseDelta());
         }
+
+        if (rl.isMouseButtonDown(.middle)) {
+            const v = rl.getMouseDelta();
+            const translate = rl.Matrix.translate(v.x,v.y,0);
+            _ = self.polygons[0].transform(translate);
+        }
+
+        const poly = &self.polygons[0];
+        _ = poly.transform(poly.rotateMatrix(1.0/16.0 * rl.getMouseWheelMove()));
 
         var axesMem: [0x10]rl.Vector2 = undefined;
         _ = self.polygons[0].axes(&axesMem);
