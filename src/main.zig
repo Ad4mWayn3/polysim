@@ -54,17 +54,39 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
     return minDepth;
 }
 
-// f: []T -> U
-// x: []X
-// g: X -> T
-// f map g x
-
 const Polygon2D = struct {
     vertices: []rl.Vector2,
+
+    /// lightweight iterator that transforms vertices only when needed
+    const TransformIterator = struct {
+        vertices: [*]rl.Vector2,
+        len: usize,
+        transform: rl.Matrix,
+        index: usize = 0,
+
+        fn init(vertices: []rl.Vector2, m: rl.Matrix) @This() {
+            return .{ 
+                .vertices = vertices,
+                .len = vertices.len,
+                .transform = m
+            };
+        }
+
+        fn next(self: *@This()) ?rl.Vector2 {
+            if (self.index == self.len) return null;
+            const e = self.vertices[self.index].transform(self.transform);
+            self.index += 1;
+            return e;
+        }
+    };
 
     fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
 
     fn init(vertices: []rl.Vector2) @This() { return .{ .vertices = vertices }; }
+
+    // fn transformLazy(self: @This(), f: rl.Matrix) TransformIterator {
+
+    // }
 
     fn transform(self: *@This(), f: rl.Matrix) *@This() {
         for (self.vertices) |*v|
@@ -76,7 +98,7 @@ const Polygon2D = struct {
         const c = self.center();
         const t = rl.Matrix.translate(-c.x,-c.y,0);
         const tI = rl.Matrix.translate(c.x,c.y,0);
-        return tI.multiply(.rotateZ(theta)).multiply(t);
+        return t.multiply(.rotateZ(theta)).multiply(tI);
     }
 
     fn axis(self: @This(), i: usize) rl.Vector2 {
@@ -178,7 +200,7 @@ pub fn main() !void {
         }
 
         const poly = &self.polygons[0];
-        _ = poly.transform(poly.rotateMatrix(1.0/16.0 * rl.getMouseWheelMove()));
+        _ = poly.transform(poly.rotateMatrix(tau * 1.0/32.0 * rl.getMouseWheelMove()));
 
         var axesMem: [0x10]rl.Vector2 = undefined;
         _ = self.polygons[0].axes(&axesMem);
