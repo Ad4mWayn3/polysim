@@ -54,6 +54,15 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
     return minDepth;
 }
 
+fn randomVec2(r: std.Random) rl.Vector2 {
+    return .init(r.float(f32),r.float(f32));
+}
+
+fn screenV() rl.Vector2 {
+    return .init(@floatFromInt(rl.getScreenWidth()),
+        @floatFromInt(rl.getScreenHeight()));
+}
+
 const Polygon2D = struct {
     vertices: []rl.Vector2,
 
@@ -82,11 +91,18 @@ const Polygon2D = struct {
 
     fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
 
+    fn initRegular(mem: []rl.Vector2, sides: u8, size: f32, offset: rl.Vector2) @This() {
+        std.debug.assert(mem.len >= sides);
+        const fract = 1.0 / @as(f32,@floatFromInt(sides));
+        for (0..sides) |i| {
+            const theta = -@as(f32,@floatFromInt(i)) * tau * fract;
+            const sin, const cos = .{@sin(theta), @cos(theta)};
+            mem[i] = rl.Vector2.init(cos,sin).scale(size).add(offset);
+        }
+        return .init(mem[0..sides]);
+    }
+
     fn init(vertices: []rl.Vector2) @This() { return .{ .vertices = vertices }; }
-
-    // fn transformLazy(self: @This(), f: rl.Matrix) TransformIterator {
-
-    // }
 
     fn transform(self: *@This(), f: rl.Matrix) *@This() {
         for (self.vertices) |*v|
@@ -94,11 +110,22 @@ const Polygon2D = struct {
         return self;
     }
 
-    fn rotateMatrix(self: @This(), theta: f32) rl.Matrix {
+    const Radians = f32;
+    fn rotate(self: *@This(), theta: Radians) *@This() {
+        return self.transform(self.rotateMatrix(theta));
+    }
+
+    /// Returns `m` but using the polygon's geometric center as origin. Useful
+    /// for non-translating transformations
+    fn centeredMatrix(self: @This(), m: rl.Matrix) rl.Matrix {
         const c = self.center();
-        const t = rl.Matrix.translate(-c.x,-c.y,0);
-        const tI = rl.Matrix.translate(c.x,c.y,0);
-        return t.multiply(.rotateZ(theta)).multiply(tI);
+        const t = rl.Matrix.translate(c.x,c.y,0);
+        const tInv = rl.Matrix.translate(-c.x,-c.y,0);
+        return tInv.multiply(m).multiply(t);
+    }
+
+    fn rotateMatrix(self: @This(), theta: Radians) rl.Matrix {
+        return self.centeredMatrix(.rotateZ(theta));
     }
 
     fn axis(self: @This(), i: usize) rl.Vector2 {
@@ -149,12 +176,16 @@ const Polygon2D = struct {
 };
 
 const State = struct {
-    vertices: [10]rl.Vector2,
-    polygons: [2]Polygon2D,
+    vertices: [20]rl.Vector2,
+    polygons: [3]Polygon2D,
     dragging: std.StaticBitSet(5),
+    rand: std.Random,
     
-    fn init(self: *@This()) void {
-        self.vertices = .{
+    fn init(self: *@This(), io: std.Io) void {
+        var buf: [8]u8 = undefined;
+        io.random(&buf);
+        self.rand = @constCast(&std.Random.DefaultPrng.init(@as(u64,@bitCast(buf)))).random();
+        self.vertices = [_]rl.Vector2{
             .{ .x = 90, .y = 40 },
             .{ .x = 47, .y = 203 },
             .{ .x = 155, .y = 293 },
@@ -165,20 +196,21 @@ const State = struct {
             .{ .x = 772, .y = 575 },
             .{ .x = 875, .y = 397 },
             .{ .x = 832, .y = 208 }
-        };
+        } ++ [_]rl.Vector2{undefined}**10;
         self.polygons = .{
             .init(self.vertices[0..5]),
-            .init(self.vertices[5..]) };
+            .init(self.vertices[5..10]),
+            .initRegular(self.vertices[10..18], 8, 90, randomVec2(self.rand).multiply(screenV())) };
         self.dragging = .initEmpty();
     }
 };
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     rl.initWindow(1200, 800, "polysim");
     defer rl.closeWindow();
 
     var self: State = undefined;
-    self.init();
+    self.init(init.io);
 
     while (!rl.windowShouldClose()) {
         const mouse = rl.getMousePosition();
@@ -201,6 +233,7 @@ pub fn main() !void {
 
         const poly = &self.polygons[0];
         _ = poly.transform(poly.rotateMatrix(tau * 1.0/32.0 * rl.getMouseWheelMove()));
+        _ = self.polygons[1].rotate(tau * 0.6 * rl.getFrameTime());
 
         var axesMem: [0x10]rl.Vector2 = undefined;
         _ = self.polygons[0].axes(&axesMem);
@@ -214,8 +247,9 @@ pub fn main() !void {
         rl.beginDrawing();
 
         rl.clearBackground(.black);
-        self.polygons[1].draw(.beige);
+        //self.polygons[1].draw(.beige);
         self.polygons[0].draw(polycolor);
+        self.polygons[2].draw(.beige);
         rl.drawRectangleLinesEx(self.polygons[0].aABB(), 2.5, .white);
 
         for (self.polygons[0].cast(), 0..) |v, i| {
@@ -233,7 +267,7 @@ pub fn main() !void {
 
         if (rgui.button(.{.x = 900, .y = 20, .width = 100, .height = 40}, "print vertices")
         ) {
-            std.debug.print("{any}\n", .{self.vertices[0..]});
+            std.debug.print("{any}\n", .{self.polygons[2].vertices});
         }
     }
 }
