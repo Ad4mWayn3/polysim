@@ -2,6 +2,14 @@ pub const rl = @import("raylib");
 pub const rgui = @import("raygui");
 pub const std = @import("std");
 
+pub fn SceneT(Polygon2D: type) type { return struct {
+    pub const vertCount: usize = 90*5;
+    pub const polyCount: usize = 90;
+
+    vertices: [vertCount]rl.Vector2,
+    objects: [polyCount]Polygon2D,
+}; }
+
 pub fn intersection(Num: type,
     x: struct{Num,Num}, y: struct{Num,Num},
 ) Num {
