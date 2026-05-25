@@ -1,4 +1,5 @@
 pub const root = @import("polysim");
+pub const Scene = root.SceneT(@This());
 const rl = root.rl;
 const std = root.std;
 const tau = std.math.tau;
@@ -40,8 +41,8 @@ pub fn initRegular(mem: []rl.Vector2, sides: u8, length: f32, offset: rl.Vector2
 	return .init(mem[0..sides]);
 }
 
-pub fn init(vertices: []rl.Vector2, comptime gpa: std.mem.Allocator) @This() {
-	return .{ .vertices = vertices, .gpa = gpa };
+pub fn init(vertices: []rl.Vector2) @This() {
+	return .{ .vertices = vertices };
 }
 
 pub fn transform(self: *@This(), f: rl.Matrix) *@This() {
@@ -59,8 +60,7 @@ pub fn rotate(self: *@This(), theta: Radians) *@This() {
 	return self.transform(self.rotateMatrix(theta));
 }
 
-/// Transforms like `m` but the origin is offset to the polygon's geometric
-/// center
+/// Transforms like `m` but the origin is offset to the polygon's geometric center
 pub fn centeredMatrix(self: @This(), m: rl.Matrix) rl.Matrix {
 	const c = self.center();
 	const t = rl.Matrix.translate(c.x,c.y,0);
@@ -109,11 +109,17 @@ pub fn center(self: @This()) rl.Vector2 {
 	return res.scale(1.0/@as(f32,@floatFromInt(self.vertices.len)));
 }
 
-pub fn draw(self: @This(), color: rl.Color) void { 
+const DrawOptions = struct {
+	fill: ?rl.Color,
+	outline: ?struct{color:rl.Color, thick:f32},
+};
+pub fn draw(self: @This(), options: DrawOptions) void { 
 	const c = self.center();
 	const l = self.vertices.len;
 	for (0..l) |i| {
 		const j = (i+1)%l;
-		rl.drawTriangle(c, self.vertices[i], self.vertices[j], color);
+		if (options.fill) |color| rl.drawTriangle(c, self.vertices[i], self.vertices[j], color);
+		if (options.outline) |outline|
+			rl.drawLineEx(self.vertices[i], self.vertices[j], outline.thick, outline.color);
 	}
 }
