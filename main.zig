@@ -1,190 +1,10 @@
-const std = @import("std");
-const rl = @import("raylib");
-const rgui = @import("raygui");
+const root = @import("polysim");
+const Polygon2D = @import("Polygon2D");
+const std = root.std;
+const rl = root.rl;
+const rgui = root.rgui;
 
 const tau = std.math.tau;
-
-pub fn intersection(Num: type,
-    x: struct{Num,Num}, y: struct{Num,Num},
-) Num {
-    std.debug.assert(x[0] < x[1] and y[0] < y[1]);
-    return @min(x[1],y[1]) - @max(x[0],y[0]);
-}
-
-pub fn collisionDepthAxis(xs: []rl.Vector2, ys: []rl.Vector2,
-    axis: rl.Vector2
-) f32 {
-    var dot = .{xs[0].dotProduct(axis), ys[0].dotProduct(axis)};
-    var x = .{.min = dot[0], .max = dot[0]};
-    var y = .{.min = dot[1], .max = dot[1]};
-    for (0..@min(xs.len,ys.len)) |i| {
-        dot = .{xs[i].dotProduct(axis), ys[i].dotProduct(axis)};
-        if (i<xs.len) {
-            if (dot[0] < x.min) x.min = dot[0]
-            else if (dot[0] > x.max) x.max = dot[0];
-        }
-        if (i<ys.len) {
-            if (dot[1] < y.min) y.min = dot[1]
-            else if (dot[1] > y.max) y.max = dot[1];
-        }
-    }
-    return intersection(f32,.{x.min,x.max},.{y.min,y.max});
-}
-
-/// Finds the axis with least collision depth in `axes`, stores it to `minAxis`
-/// and returns the depth. Negative depth means the stored `minAxis` is a
-/// separating axis, and the polygons aren't colliding. May not be sufficient
-/// for accurate collision checking if not enough `axes` are provided or either
-/// `xs` or `ys` are non-convex.
-pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
-    axes: []rl.Vector2, minAxis: *rl.Vector2
-) f32 {
-    std.debug.assert(xs.len*ys.len*axes.len != 0); // no empty arrays
-    var minDepth = std.math.floatMax(f32);
-    for (axes) |axis| {
-        //std.debug.assert(@abs(axis.length()-1.0) < 0.1);
-        const depth = collisionDepthAxis(xs, ys, axis);
-        if (depth < minDepth) {
-            minDepth = depth;
-            minAxis.* = axis;
-        }
-        if (depth < 0.0)
-            return depth;
-    }
-    return minDepth;
-}
-
-fn randomVec2(r: std.Random) rl.Vector2 {
-    return .init(r.float(f32),r.float(f32));
-}
-
-fn screenV() rl.Vector2 {
-    return .init(@floatFromInt(rl.getScreenWidth()),
-        @floatFromInt(rl.getScreenHeight()));
-}
-
-const Polygon2D = struct {
-    vertices: []rl.Vector2,
-
-    /// lightweight iterator that transforms vertices only when needed
-    const TransformIterator = struct {
-        vertices: [*]rl.Vector2,
-        len: usize,
-        transform: rl.Matrix,
-        index: usize = 0,
-
-        fn init(vertices: []rl.Vector2, m: rl.Matrix) @This() {
-            return .{ 
-                .vertices = vertices,
-                .len = vertices.len,
-                .transform = m
-            };
-        }
-
-        fn next(self: *@This()) ?rl.Vector2 {
-            if (self.index == self.len) return null;
-            const e = self.vertices[self.index].transform(self.transform);
-            self.index += 1;
-            return e;
-        }
-    };
-
-    fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
-
-    fn collisionDepth(self: @This(), other: @This(), mem: []rl.Vector2) f32 {
-        const a1 = self.axes(mem);
-        const a2 = other.axes(mem[self.vertices.len..]);
-        var axs: rl.Vector2 = undefined;
-        return minCollisionDepthAxes(self.cast(), other.cast(), mem[0..a1.len+a2.len], &axs);
-    }
-
-    fn initRegular(mem: []rl.Vector2, sides: u8, length: f32, offset: rl.Vector2) @This() {
-        std.debug.assert(mem.len >= sides);
-        const fract = 1.0 / @as(f32,@floatFromInt(sides));
-        for (0..sides) |i| {
-            const theta = -@as(f32,@floatFromInt(i)) * tau * fract;
-            const sin, const cos = .{@sin(theta), @cos(theta)};
-            mem[i] = rl.Vector2.init(cos,sin).scale(length).add(offset);
-        }
-        return .init(mem[0..sides]);
-    }
-
-    fn init(vertices: []rl.Vector2) @This() { return .{ .vertices = vertices }; }
-
-    fn transform(self: *@This(), f: rl.Matrix) *@This() {
-        for (self.vertices) |*v|
-            v.* = v.transform(f);
-        return self;
-    }
-
-    fn transformCentered(self: *@This(), m: rl.Matrix) *@This() {
-        return self.transform(self.centeredMatrix(m));
-    }
-
-    const Radians = f32;
-    fn rotate(self: *@This(), theta: Radians) *@This() {
-        return self.transform(self.rotateMatrix(theta));
-    }
-
-    /// Returns `m` but using the polygon's geometric center as origin. Useful
-    /// for non-translating transformations
-    fn centeredMatrix(self: @This(), m: rl.Matrix) rl.Matrix {
-        const c = self.center();
-        const t = rl.Matrix.translate(c.x,c.y,0);
-        const tInv = rl.Matrix.translate(-c.x,-c.y,0);
-        return tInv.multiply(m).multiply(t);
-    }
-
-    fn rotateMatrix(self: @This(), theta: Radians) rl.Matrix {
-        return self.centeredMatrix(.rotateZ(theta));
-    }
-
-    fn axis(self: @This(), i: usize) rl.Vector2 {
-        const len = self.vertices.len;
-        const u, const v = .{self.vertices[i], self.vertices[(i+1)%len]};
-        const w = v.subtract(u);
-        return rl.Vector2.init(-w.y, w.x).normalize();
-    }
-
-    fn aABB(self: @This()) rl.Rectangle {
-        var xmin = self.vertices[0].x;
-        var xmax = xmin;
-        var ymin = self.vertices[0].y;
-        var ymax = ymin;
-        for (self.vertices[1..]) |v| {
-            if (v.x < xmin) xmin = v.x;
-            if (v.x > xmax) xmax = v.x;
-            if (v.y < ymin) ymin = v.y;
-            if (v.y > ymax) ymax = v.y;
-        }
-        return .{.x=xmin, .y=ymin, .width=@abs(xmax-xmin), .height=ymax-ymin};
-    }
-
-    fn axes(self: @This(), buf: []rl.Vector2) []rl.Vector2 {
-        const len = self.vertices.len;
-        std.debug.assert(buf.len >= len);
-        for (0..len) |i| {
-            buf[i] = self.axis(i);
-        }
-        return buf[0..len];
-    }
-
-    fn center(self: @This()) rl.Vector2 {
-        var res = rl.Vector2.zero();
-        for (self.vertices) |vertex|
-            res = res.add(vertex);
-        return res.scale(1.0/@as(f32,@floatFromInt(self.vertices.len)));
-    }
-
-    fn draw(self: @This(), color: rl.Color) void { 
-        const c = self.center();
-        const l = self.vertices.len;
-        for (0..l) |i| {
-            const j = (i+1)%l;
-            rl.drawTriangle(c, self.vertices[i], self.vertices[j], color);
-        }
-    }
-};
 
 const State = struct {
     vertices: [200]rl.Vector2,
@@ -214,15 +34,13 @@ const State = struct {
         _ = self.polygons[0].transformCentered(.scale(0.5,0.5,0.5));
         for (self.polygons[1..], 0..) |*p, i| {
             p.* = .initRegular(self.vertices[6*i+9..6*i+9+6], 6,
-                self.rand.float(f32)*60.0, randomVec2(self.rand).multiply(screenV()));
+                self.rand.float(f32)*60.0, root.randomVec2(self.rand).multiply(root.screenV()));
         }
         self.dragging = .initEmpty();
     }
 };
 
-pub fn alloca(T: type, comptime len: usize) []T {
-    return @constCast(&([_]T{undefined}**len));
-}
+var mem: [30]rl.Vector2 = undefined;
 
 pub fn main(init: std.process.Init) !void {
     rl.setTraceLogLevel(.warning);
@@ -264,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
         //if (minCollisionDepthAxes(self.polygons[0].cast(),
           //  self.polygons[1].cast(), axes, &axis) > 0.0) .init(0xff,0,0,0x80) else .blue;
         for (self.polygons[1..]) |p| {
-            if (self.polygons[0].collisionDepth(p, alloca(rl.Vector2,30)) > 0.0)
+            if (self.polygons[0].collisionDepth(p, &mem) > 0.0)
                 polycolor = .init(0xff,0,0,0x80);
         }
 
