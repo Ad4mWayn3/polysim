@@ -1,5 +1,16 @@
 const std = @import("std");
 
+fn makeMod(b: *std.Build, path: []const u8, name: []const u8,
+    target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode,
+    imports: []const std.Build.Module.Import
+) *std.Build.Module {
+    return b.addModule(name, .{
+        .root_source_file = b.path(path),
+        .target = target, .optimize = optimize,
+        .imports = imports
+    });
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -33,6 +44,10 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{.name = "polysim", .module = polysim}}
     });
 
+    const Sim = makeMod(b, "Sim.zig", "Sim", target, optimize,
+        &.{.{.name = "polysim", .module = polysim},
+            .{.name = "Polygon2D", .module = Polygon2D}});
+
     const exe = b.addExecutable(.{
         .name = "polysim",
         .root_module = b.createModule(.{
@@ -41,15 +56,14 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                .{ .name = "polysim", .module = polysim},
-               .{ .name = "Polygon2D", .module = Polygon2D }
+               .{ .name = "Polygon2D", .module = Polygon2D },
+               .{ .name = "Sim", .module = Sim },
             },
         }),
     });
         
 
     exe.root_module.linkLibrary(raylib_artifact);
-    // exe.root_module.addImport("raylib", raylib);
-    // exe.root_module.addImport("raygui", raygui);
    
     b.installArtifact(exe);
 
@@ -63,20 +77,4 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
-
-    // const mod_tests = b.addTest(.{
-    //     .root_module = mod,
-    // });
-
-    // const run_mod_tests = b.addRunArtifact(mod_tests);
-
-    // const exe_tests = b.addTest(.{
-    //     .root_module = exe.root_module,
-    // });
-
-    // const run_exe_tests = b.addRunArtifact(exe_tests);
-
-    // const test_step = b.step("test", "Run tests");
-    // test_step.dependOn(&run_mod_tests.step);
-    // test_step.dependOn(&run_exe_tests.step);
 }
