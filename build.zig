@@ -18,6 +18,21 @@ pub fn build(b: *std.Build) void {
     const raygui = raylib_dep.module("raygui"); // raygui module
     const raylib_artifact = raylib_dep.artifact("raylib"); // raylib C library
 
+    const polysim = b.createModule(.{
+        .root_source_file = b.path("root.zig"),
+        .target = target, .optimize = optimize,
+        .imports = &.{
+            .{ .name = "raylib", .module = raylib },
+            .{ .name = "raygui", .module = raygui },
+        }
+    });
+
+    const Polygon2D = b.addModule("Polygon2D", .{
+        .root_source_file = b.path("Polygon2D.zig"),
+        .target = target, .optimize = optimize,
+        .imports = &.{.{.name = "polysim", .module = polysim}}
+    });
+
     const exe = b.addExecutable(.{
         .name = "polysim",
         .root_module = b.createModule(.{
@@ -25,14 +40,16 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-               // .{ .name = "polysim", .module = mod },
+               .{ .name = "polysim", .module = polysim},
+               .{ .name = "Polygon2D", .module = Polygon2D }
             },
         }),
     });
+        
 
     exe.root_module.linkLibrary(raylib_artifact);
-    exe.root_module.addImport("raylib", raylib);
-    exe.root_module.addImport("raygui", raygui);
+    // exe.root_module.addImport("raylib", raylib);
+    // exe.root_module.addImport("raygui", raygui);
    
     b.installArtifact(exe);
 
