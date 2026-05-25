@@ -1,5 +1,6 @@
 const root = @import("polysim");
 const Polygon2D = @import("Polygon2D");
+const Sim = @import("Sim");
 const std = root.std;
 const rl = root.rl;
 const rgui = root.rgui;
@@ -42,7 +43,7 @@ const State = struct {
 
 var mem: [30]rl.Vector2 = undefined;
 
-pub fn main(init: std.process.Init) !void {
+pub fn _main(init: std.process.Init) !void {
     rl.setTraceLogLevel(.warning);
     rl.initWindow(1200, 600, "polysim");
     defer rl.closeWindow();
@@ -118,5 +119,34 @@ pub fn main(init: std.process.Init) !void {
         ) {
             std.debug.print("{any}\n", .{self.polygons[2].vertices});
         }
+    }
+}
+
+var sim: Sim = undefined;
+
+pub fn main(init: std.process.Init) !void {
+    // initialize window
+    rl.setTraceLogLevel(.warning);
+    const screen = .{
+        .width = @divTrunc(rl.getScreenWidth()*3, 4),
+        .height = @divTrunc(rl.getScreenHeight()*3, 4), };
+    _ = screen;
+    rl.initWindow(1200,600, "polysim!!");
+    defer rl.closeWindow();
+
+    // seed the pseudo-RNG and initialize the simulator
+    var seed: [64/8]u8 = undefined;
+    init.io.random(&seed);
+    const random = @constCast(&std.Random.DefaultPrng.init(@bitCast(seed))).random();
+    try sim.init(random);
+
+    while (!rl.windowShouldClose()) {
+        const delta = rl.getFrameTime();
+        try sim.update(delta);
+        
+        rl.beginDrawing();
+        rl.clearBackground(.black);
+        sim.draw();
+        rl.endDrawing();
     }
 }
