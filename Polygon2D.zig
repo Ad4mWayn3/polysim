@@ -1,10 +1,11 @@
 pub const root = @import("polysim");
-pub const Scene = root.SceneT(@This());
+pub const Scene = root.SceneT(@This(), 3);
 const rl = root.rl;
 const std = root.std;
 const tau = std.math.tau;
 
 vertices: []rl.Vector2,
+aABBcache: rl.Rectangle = undefined,
 comptime gpa: std.mem.Allocator = std.heap.page_allocator,
 
 pub fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
@@ -16,18 +17,43 @@ pub fn collisionDepth(self: @This(), other: @This(), mem: []rl.Vector2) f32 {
 	return root.minCollisionDepthAxes(self.cast(), other.cast(), mem[0..a1.len+a2.len], &axs);
 }
 
-pub fn minMaxAxis(self: @This(), axs: rl.Vector2) struct{rl.Vector2,rl.Vector2} {
+pub fn minMaxAxis(self: @This(), axs: rl.Vector2,
+	minMaxIds: *struct{usize,usize}
+) struct{rl.Vector2,rl.Vector2} {
 	var min, var max = .{self.vertices[0], self.vertices[0]};
-	for (self.vertices[1..]) |v| {
+	const minI, const maxI = .{&minMaxIds[0],&minMaxIds[1]};
+	for (self.vertices[1..], 0..) |v, i| {
 		const dot = v.dotProduct(axs);
-		if (dot < min.dotProduct(axs)) min = v;
-		if (dot > max.dotProduct(axs)) max = v;
+		if (dot < min.dotProduct(axs)) min,minI.* = .{v,i};
+		if (dot > max.dotProduct(axs)) max,maxI.* = .{v,i};
 	}
 	return .{min,max};
 }
 
 pub fn minkowskiDiff(self: @This(), other: @This(), mem: []rl.Vector2) @This() {
 	_ = .{self,other,mem};
+}
+
+/// Creates a hull from a set of points.
+pub fn initHull(vertices: []rl.Vector2, gpa: std.mem.Allocator) @This() {
+	const poly: @This() = .init(vertices);
+
+	// find lowest point and place it first
+	var out = struct{usize,usize}{undefined,undefined};
+	_, const p = poly.minMaxAxis(.init(0,1), &out);
+	_, const minI = out;
+	std.mem.swap(rl.Vector2, &vertices[0],&vertices[minI]);
+
+	// sort points in counter-clockwise order
+	//std.debug.print("before: {any}\n\n\n\n", .{vertices});
+	std.mem.sortUnstable(rl.Vector2, vertices[1..], p, root.isCounterClockwise);
+	//std.debug.print("after: {any}\n", .{vertices});
+
+	// build hull
+	const mem = gpa.alloc(rl.Vector2, vertices.len) catch unreachable;
+	defer gpa.free(mem);
+	const partition = root.buildHullAssumeSorted(vertices, mem);
+	return .init(partition.hull);
 }
 
 pub fn initRegular(mem: []rl.Vector2, sides: u8, length: f32, offset: rl.Vector2) @This() {
@@ -42,16 +68,20 @@ pub fn initRegular(mem: []rl.Vector2, sides: u8, length: f32, offset: rl.Vector2
 }
 
 pub fn init(vertices: []rl.Vector2) @This() {
-	return .{ .vertices = vertices };
+	var out = @This(){.vertices = vertices};
+	out.aABBcache = out.aABB();
+	return out;
 }
 
 pub fn transform(self: *@This(), f: rl.Matrix) *@This() {
+	defer self.aABBcache = self.aABB();
 	for (self.vertices) |*v|
 		v.* = v.transform(f);
 	return self;
 }
 
 pub fn transformCentered(self: *@This(), m: rl.Matrix) *@This() {
+	//defer self.aABBcache = self.aABB();
 	return self.transform(self.centeredMatrix(m));
 }
 

@@ -96,10 +96,10 @@ pub fn _main(init: std.process.Init) !void {
         rl.drawRectangleLinesEx(self.polygons[0].aABB(), 2.5, .white);
 
         // draw each vertex + label
+        var buf: [16]u8 = undefined;
         for (self.polygons[0].cast(), 0..) |v, i| {
             rl.drawLineV(v, v.add(self.polygons[0].axis(i).scale(40)), .white);
             rl.drawCircleV(v, 3.4, .red);
-            var buf: [16]u8 = undefined;
             const len = std.fmt.printInt(&buf, i, 10, .lower, .{});
             buf[len] = 0;
             rl.drawText(buf[0..len :0], @intFromFloat(v.x), @intFromFloat(v.y), 16, .white);
@@ -127,6 +127,7 @@ var sim: Sim = undefined;
 pub fn main(init: std.process.Init) !void {
     // initialize window
     rl.setTraceLogLevel(.warning);
+    rl.setExitKey(.null);
     const screen = .{
         .width = @divTrunc(rl.getScreenWidth()*3, 4),
         .height = @divTrunc(rl.getScreenHeight()*3, 4), };
@@ -143,7 +144,7 @@ pub fn main(init: std.process.Init) !void {
     while (!rl.windowShouldClose()) {
         const delta = rl.getFrameTime();
         try sim.update(delta);
-        
+
         rl.beginDrawing();
         rl.clearBackground(.black);
         sim.draw();

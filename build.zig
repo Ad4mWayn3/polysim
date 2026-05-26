@@ -44,9 +44,14 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{.name = "polysim", .module = polysim}}
     });
 
+    const geometry = makeMod(b, "geometry.zig", "geometry", target, optimize,
+        &.{.{.name = "polysim", .module = polysim},
+            .{.name = "Polygon2D", .module = Polygon2D},});
+
     const Sim = makeMod(b, "Sim.zig", "Sim", target, optimize,
         &.{.{.name = "polysim", .module = polysim},
-            .{.name = "Polygon2D", .module = Polygon2D}});
+            .{.name = "Polygon2D", .module = Polygon2D},
+            .{.name = "geometry", .module = geometry},});
 
     const exe = b.addExecutable(.{
         .name = "polysim",
