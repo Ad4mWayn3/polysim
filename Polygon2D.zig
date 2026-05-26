@@ -1,5 +1,7 @@
+const NUMERO_LADOS = 3;
+
 pub const root = @import("polysim");
-pub const Scene = root.SceneT(@This(), 3);
+pub const Scene = root.SceneT(@This(), NUMERO_LADOS);
 const rl = root.rl;
 const std = root.std;
 const tau = std.math.tau;
