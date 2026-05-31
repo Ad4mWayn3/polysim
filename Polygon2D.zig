@@ -37,25 +37,24 @@ pub fn minkowskiDiff(self: @This(), other: @This(), mem: []rl.Vector2) @This() {
 }
 
 /// Creates a hull from a set of points.
-pub fn initHull(vertices: []rl.Vector2, gpa: std.mem.Allocator) @This() {
-	const poly: @This() = .init(vertices);
+pub fn initHull(vertices: []rl.Vector2, gpa: std.mem.Allocator
+) struct{@This(),[]rl.Vector2} {
+	//const poly: @This() = .init(vertices);
 
-	// find lowest point and place it first
-	var out = struct{usize,usize}{undefined,undefined};
-	_, const p = poly.minMaxAxis(.init(0,1), &out);
-	_, const minI = out;
-	std.mem.swap(rl.Vector2, &vertices[0],&vertices[minI]);
-
-	// sort points in counter-clockwise order
-	//std.debug.print("before: {any}\n\n\n\n", .{vertices});
-	std.mem.sortUnstable(rl.Vector2, vertices[1..], p, root.isCounterClockwise);
+	//self.loopState.sorted = true;
+    const i = std.sort.argMin(rl.Vector2, vertices, {},
+        root.vecLowerThan).?;
+    if (i != 0) std.mem.swap(rl.Vector2, &vertices[i],
+        &vertices[0]);
+    std.mem.sortUnstable(rl.Vector2, vertices[1..],
+        vertices[0], root.isCounterClockwise);
 	//std.debug.print("after: {any}\n", .{vertices});
 
 	// build hull
 	const mem = gpa.alloc(rl.Vector2, vertices.len) catch unreachable;
 	defer gpa.free(mem);
 	const partition = root.buildHullAssumeSorted(vertices, mem);
-	return .init(partition.hull);
+	return .{.init(partition.hull), partition.inner};
 }
 
 pub fn initRegular(mem: []rl.Vector2, sides: u8, length: f32, offset: rl.Vector2) @This() {
