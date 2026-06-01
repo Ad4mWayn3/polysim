@@ -2,6 +2,8 @@ pub const rl = @import("raylib");
 pub const rgui = @import("raygui");
 pub const std = @import("std");
 
+const tau = std.math.tau;
+
 pub const NarrowPhaseResult = struct {
     collides: bool,
 
@@ -211,6 +213,7 @@ pub const HullSplit = struct {
     hull: []rl.Vector2,
     inner: []rl.Vector2,
 };
+
 /// Splits the vertices into `hull` and `inner` keeping their clockwise order; `inner`
 /// vertices get reordered so that the first element is the bottom-most. Applying
 /// recursively to the `inner` split will eventually produce convex layers.
@@ -290,6 +293,11 @@ pub fn isCounterClockwise(offset: rl.Vector2, x: rl.Vector2, y: rl.Vector2) bool
     // for a negative wedge product instead of positive
 }
 
+pub fn vecLowerThan(_: void, v: rl.Vector2, u: rl.Vector2) bool {
+    return v.y > u.y; // v will appear physically lower in screen coordinates
+        // if the `y` coordinate is greater.
+}
+
 /// Finds the axis with least collision depth in `axes`, stores it to `minAxis`
 /// and returns the depth. Negative depth means the stored `minAxis` is a
 /// separating axis, and the polygons aren't colliding. May not be sufficient
@@ -315,6 +323,12 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
 
 pub fn randomVec2(r: std.Random) rl.Vector2 {
     return .init(r.float(f32),r.float(f32));
+}
+
+pub fn randomVec2Radial(r: std.Random) rl.Vector2 {
+    const l = r.float(f32);
+    const theta = r.float(f32) * tau;
+    return (rl.Vector2{.x = @cos(theta), .y = @sin(theta)}).scale(l);
 }
 
 pub fn screenV() rl.Vector2 {

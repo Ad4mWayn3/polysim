@@ -5,7 +5,7 @@ const Polygon2D = @import("Polygon2D");
 const Scene = Polygon2D.Scene;
 
 scene: Scene,
-hull: Polygon2D,
+hulls: [10]Polygon2D,
 selected: std.bit_set.ArrayBitSet(u8, Scene.polyCount),
 current: i32 = -1,
 pressed: bool = false,
@@ -26,10 +26,16 @@ pub fn init(self: *@This(), random: std.Random) !void {
         const mem = self.scene.vertices[i * count .. i * count + count];
         obj.* = .initRegular(mem, count, random.float(f32) * 30 + 20,
         	root.randomVec2(random).multiply(root.screenV().scale(0.7)).add(.init(60,60)));
-        if (i < 90) self.drawStack[i] = root.randomVec2(random).multiply(root.screenV());
+        if (i < 90) self.drawStack[i] = root.randomVec2(random)
+            .scale(500);
+            // .multiply(root.screenV());
     }
 
-    self.hull = .initHull(&self.drawStack, std.heap.page_allocator);
+    var inner: []rl.Vector2 = self.drawStack[0..];
+    for (&self.hulls) |*hull| {
+        if (inner.len <= 2) break;
+        hull.*, inner = Polygon2D.initHull(inner, std.heap.page_allocator);
+    }
 }
 
 pub fn update(self: *@This(), delta: f32) !void {
@@ -91,5 +97,6 @@ pub fn draw(self: *@This()) void {
         .draw(.{ .fill = null, .outline = .{ .color = .white, .thick = 3.2 } });
 
     // const hull: Polygon2D = .initHull(&self.scene.vertices, std.heap.page_allocator);
-    self.hull.draw(.{ .fill = null, .outline = .{ .color = .blue, .thick = 3.4 } });
+    for (self.hulls) |hull|
+        hull.draw(.{ .fill = null, .outline = .{ .color = .blue, .thick = 3.4 } });
 }
