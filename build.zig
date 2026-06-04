@@ -29,12 +29,16 @@ pub fn build(b: *std.Build) void {
     const raygui = raylib_dep.module("raygui"); // raygui module
     const raylib_artifact = raylib_dep.artifact("raylib"); // raylib C library
 
+    const interface = makeMod(b, "thirdparty/interface.zig", "interface",
+        target, optimize, &.{});
+
     const polysim = b.createModule(.{
         .root_source_file = b.path("root.zig"),
         .target = target, .optimize = optimize,
         .imports = &.{
             .{ .name = "raylib", .module = raylib },
             .{ .name = "raygui", .module = raygui },
+            .{ .name = "interface", .module = interface },
         }
     });
 
