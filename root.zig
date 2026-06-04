@@ -1,39 +1,17 @@
 pub const rl = @import("raylib");
 pub const rgui = @import("raygui");
 pub const std = @import("std");
+pub const Interface = @import("interface").Interface;
 
 const tau = std.math.tau;
 
-pub const NarrowPhaseResult = struct {
-    collides: bool,
+/// TODO: replace this type
+const Inner = void;
 
-    depth: f32 = 0,
-    normal: rl.Vector2 = .{},
-
-    // metrics
-    iterations: u32 = 0,
-    axes_tested: u32 = 0,
-    support_calls: u32 = 0,
-
-    ns: u64 = 0,
-};
-
-pub const BroadPhaseResult = struct {
-    pair_count: usize,
-
-    tests: usize = 0,
-    ns: u64 = 0,
-};
-
-pub const Pair = struct {
-    a: u32,
-    b: u32,
-};
-
-pub const Simplex = struct {
-    points: [3]rl.Vector2,
-    len: u8,
-};
+pub const Shape2D = Interface(.{
+    .aABB = fn (Inner) rl.Rectangle,
+    .position = fn (Inner) rl.Vector2,
+}, null);
 
 pub fn SceneT(Polygon2D: type, comptime vCount: usize) type { return struct {
     pub const vertCount: usize = 90*vCount;
@@ -214,6 +192,16 @@ pub const HullSplit = struct {
     inner: []rl.Vector2,
 };
 
+/// Reorders `vertices` to appear conterclockwise. Starts in the direction of
+/// `min`.
+pub fn sortCounterclockwiseMin(vertices: []rl.Vector2, min: rl.Vector2) void {
+    std.mem.sortUnstable(rl.Vector2, vertices, min, 
+        struct { fn lessThan(origin: rl.Vector2, x: rl.Vector2, y: rl.Vector2
+        ) bool {
+            return wedge(x.subtract(origin),y.subtract(origin)) < 0.0;
+        }}.lessThan);
+}
+
 /// Splits the vertices into `hull` and `inner` keeping their clockwise order; `inner`
 /// vertices get reordered so that the first element is the bottom-most. Applying
 /// recursively to the `inner` split will eventually produce convex layers.
@@ -262,7 +250,6 @@ pub fn buildHullAssumeSorted(vertices: []rl.Vector2, mem: []rl.Vector2) HullSpli
         .inner = vertices[stack.frontLen..]};
 }
 
-
 pub fn collisionDepthAxis(xs: []rl.Vector2, ys: []rl.Vector2,
     axis: rl.Vector2
 ) f32 {
@@ -281,21 +268,6 @@ pub fn collisionDepthAxis(xs: []rl.Vector2, ys: []rl.Vector2,
         }
     }
     return intersection(f32,.{x.min,x.max},.{y.min,y.max});
-}
-
-pub fn wedge(lhs: rl.Vector2, rhs: rl.Vector2) f32 {
-    return lhs.x*rhs.y - lhs.y*rhs.x;
-}
-
-pub fn isCounterClockwise(offset: rl.Vector2, x: rl.Vector2, y: rl.Vector2) bool {
-    return wedge(x.subtract(offset),y.subtract(offset)) < 0;
-    // because in most renderers the y axis ascends from top to bottom, we check
-    // for a negative wedge product instead of positive
-}
-
-pub fn vecLowerThan(_: void, v: rl.Vector2, u: rl.Vector2) bool {
-    return v.y > u.y; // v will appear physically lower in screen coordinates
-        // if the `y` coordinate is greater.
 }
 
 /// Finds the axis with least collision depth in `axes`, stores it to `minAxis`
@@ -319,6 +291,21 @@ pub fn minCollisionDepthAxes(xs: []rl.Vector2, ys: []rl.Vector2,
             return depth;
     }
     return minDepth;
+}
+
+pub fn wedge(lhs: rl.Vector2, rhs: rl.Vector2) f32 {
+    return lhs.x*rhs.y - lhs.y*rhs.x;
+}
+
+pub fn isCounterClockwise(offset: rl.Vector2, x: rl.Vector2, y: rl.Vector2) bool {
+    return wedge(x.subtract(offset),y.subtract(offset)) < 0;
+    // because in most renderers the y axis ascends from top to bottom, we check
+    // for a negative wedge product instead of positive
+}
+
+pub fn vecLowerThan(_: void, v: rl.Vector2, u: rl.Vector2) bool {
+    return v.y > u.y; // v will appear physically lower in screen coordinates
+        // if the `y` coordinate is greater.
 }
 
 pub fn randomVec2(r: std.Random) rl.Vector2 {
@@ -350,6 +337,8 @@ pub fn peekBack(slice: anytype, i: usize) *Child(@TypeOf(slice)) {
     return &s[s.len-i - 1];
 }
 
+/// returns the amount the interval `x` intersects the interval `y`, if they do
+/// not intersect, returns the negative distance from each other.
 pub fn intersection(Num: type,
     x: struct{Num,Num}, y: struct{Num,Num},
 ) Num {

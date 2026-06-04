@@ -1,4 +1,4 @@
-const NUMERO_LADOS = 3;
+const NUMERO_LADOS = 9;
 
 pub const root = @import("polysim");
 pub const Scene = root.SceneT(@This(), NUMERO_LADOS);
@@ -12,6 +12,11 @@ comptime gpa: std.mem.Allocator = std.heap.page_allocator,
 
 pub fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
 
+/// how much the polygon intersects another in the least intersecting axis.
+/// Returns a negative number early if a separating axis is found.
+/// 
+/// `mem.length` is expected to be at least as big as `self.vertices.len + 
+/// other.vertices.len`.
 pub fn collisionDepth(self: @This(), other: @This(), mem: []rl.Vector2) f32 {
 	const a1 = self.axes(mem);
 	const a2 = other.axes(mem[self.vertices.len..]);
@@ -70,14 +75,14 @@ pub fn initRegular(mem: []rl.Vector2, sides: u8, length: f32, offset: rl.Vector2
 
 pub fn init(vertices: []rl.Vector2) @This() {
 	var out = @This(){.vertices = vertices};
-	out.aABBcache = out.aABB();
+	out.aABBcache = out.aABBCalc();
 	return out;
 }
 
 pub fn transform(self: *@This(), f: rl.Matrix) *@This() {
-	defer self.aABBcache = self.aABB();
 	for (self.vertices) |*v|
 		v.* = v.transform(f);
+	self.aABBcache = self.aABBCalc();
 	return self;
 }
 
@@ -111,6 +116,10 @@ pub fn axis(self: @This(), i: usize) rl.Vector2 {
 }
 
 pub fn aABB(self: @This()) rl.Rectangle {
+	return self.aABBcache;
+}
+
+fn aABBCalc(self: *@This()) rl.Rectangle {
 	var xmin = self.vertices[0].x;
 	var xmax = xmin;
 	var ymin = self.vertices[0].y;
@@ -121,7 +130,9 @@ pub fn aABB(self: @This()) rl.Rectangle {
 		if (v.y < ymin) ymin = v.y;
 		if (v.y > ymax) ymax = v.y;
 	}
-	return .{.x=xmin, .y=ymin, .width=@abs(xmax-xmin), .height=ymax-ymin};
+	self.aABBcache = .{.x=xmin, .y=ymin, .width=@abs(xmax-xmin),
+		.height=ymax-ymin};
+	return self.aABBcache;
 }
 
 pub fn axes(self: @This(), buf: []rl.Vector2) []rl.Vector2 {
