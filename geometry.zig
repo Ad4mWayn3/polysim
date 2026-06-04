@@ -24,42 +24,82 @@ pub const BroadPhaseResult = struct {
     ns: u64 = 0,
 };
 
-pub const Pair = struct {
-    a: u32,
-    b: u32,
-};
+/// Iterates once over every pair, quickly discards possible collisions with
+/// Shape2D.aABB(), if in narrow-phase, `checkCollisionPrecise` returns true,
+/// calls `handleIdPair` with the ids of the colliding objects.
+pub fn broadPhaseBruteForce(Shape2D: type, shapes: []Shape2D,
+    context: anytype, checkCollisionPrecise: fn(@TypeOf(context),Shape2D,Shape2D) bool,
+    handleIdPairCtx: anytype, handleIdPair: fn (@TypeOf(handleIdPairCtx),usize,usize) void
+) void {
+    //comptime root.Shape2D.validation.satisfiedBy(Shape2D);
 
-pub const Simplex = struct {
-    points: [3]rl.Vector2,
-    len: u8,
-};
+    for (shapes[0..shapes.len-1], 0..) |shape, i| {
+        for (shapes[i+1..], i+1..) |shape2, j| {
+            // discard impossible collisions with axis-aligned bounding boxes
+            // before doing precise checks. Decently faster if the bounding box
+            // is cached, and recomputed only on transforms.
+            if (!rl.checkCollisionRecs(shape.aABB(), shape2.aABB())) continue;
 
-pub fn sat(a: Polygon2D, b: Polygon2D, axes_buf: []rl.Vector2) NarrowPhaseResult {
-    _ = .{ a, b, axes_buf };
+            if (checkCollisionPrecise(context, shape, shape2))
+                handleIdPair(handleIdPairCtx, i,j);
+        }
+    }
 }
 
-pub fn gjk(a: Polygon2D, b: Polygon2D, simplex: *Simplex) NarrowPhaseResult {
-    _ = .{ a, b, &simplex };
+/// Sorts `shapes` along the x axis and traverses the list, makes an index
+/// interval of possible collisions and does broad phase collision checking in
+/// bruteforce.
+/// 
+/// PERSONAL NOTE: instead of manually handling the interval collision inline,
+/// parameterize a callback that deals with the interval, letting caller decide
+/// whether to evaluate the interval immediately or store it and handle it later.
+pub fn broadPhaseSweepAndPrune(Shape2D: type, shapes: []Shape2D,
+    context: anytype, checkCollisionPrecise: fn(@TypeOf(context),Shape2D,Shape2D) bool,
+    handleIdPairCtx: anytype, handleIdPair: fn (@TypeOf(handleIdPairCtx),usize,usize) void
+) void {
+    //comptime root.Shape2D.validation.satisfiedBy(Shape2D);
+
+    // sort shapes by axis
+    const lessThan = comptime struct { fn inner(_: void, x: Shape2D, y: Shape2D
+    ) bool {
+        return x.aABB().x < y.aABB().y;
+    } }.inner;
+    std.mem.sortUnstable(Shape2D, shapes, {}, lessThan); // assuming the sorting
+        // implementation is pattern-defeating quicksort, future calls of this
+        // function should take roughly O(n) time since the geometry isn't expected
+        // to change drastically from one iteration to the next, otherwise, this
+        // approach would be barely better than brute force, and differences
+        // wouldn't be noticeable until reasonably large data sets
+
+    // build active intervals and bruteforce check for each.
+    var interval: struct{usize,usize} = undefined;
+    var i: usize = 0;
+    for (shapes[0..shapes.len-1]) |shape|  {
+        if (i == shapes.len-1) break;
+        interval = .{i,i};
+
+        for (shapes[i..], i..) |shape2, j| {
+            const r1, const r2 = struct{rl.Rectangle,rl.Rectangle}
+                {shape.aABB(), shape2.aABB()};
+            
+            // check if the shadows of the rectangles intersect in the `x` axis
+            if (root.intersection(f32, .{r1.x, r1.x+r1.width},
+                .{r2.x, r2.x+r2.width}) > 0.0
+            ) {
+                // increment the current interval
+                interval[1] = j;
+            } else if (interval[1] > interval[0]) {
+                broadPhaseBruteForce(Shape2D, shapes[interval[0]..interval[1]],
+                    context, checkCollisionPrecise, handleIdPairCtx, handleIdPair);
+
+                // VERY IMPORTANT STATEMENT. The fact that i jumps to j after the
+                // inner for loop is done is the whole reason this should run in 
+                // O(n) time
+                i = j;
+                break;
+            } else break;
+
+        }
+        i += 1;
+    }
 }
-
-pub fn support(vertices: []const rl.Vector2, dir: rl.Vector2) rl.Vector2 {
-    _ = .{ vertices, dir };
-}
-
-pub fn sweepAndPrune(aabbs: []const rl.Rectangle, pairs_out: []Pair) []Pair {
-    _ = .{ aabbs, pairs_out };
-}
-
-/// TODO: change placeholder
-const GridScratch = void;
-
-pub fn uniformGrid(aabbs: []const rl.Rectangle, cell_size: f32,
-	scratch: *GridScratch, pairs_out: []Pair,
-) []Pair {
-    _ = .{ aabbs, cell_size, &scratch, pairs_out };
-}
-
-// pub const Body = struct {
-//     poly: Polygon2D,
-//     aabb: rl.Rectangle,
-// };
