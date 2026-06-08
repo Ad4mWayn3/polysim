@@ -5,24 +5,30 @@ const Polygon2D = @import("Polygon2D");
 const Scene = Polygon2D.Scene;
 const geometry = @import("geometry");
 
+io: std.Io,
+gpa: std.mem.Allocator,
 scene: Scene,
 hulls: [4]Polygon2D,
+pointSet: [Scene.polyCount]rl.Vector2,
 selected: std.bit_set.ArrayBitSet(u8, Scene.polyCount),
 current: i32 = -1,
 pressed: bool = false,
 transform: enum { none, slide, rotate, scale },
 collisionAxes: [(Scene.vertPerPoly)*2]rl.Vector2,
 //aux: [20]rl.Vector2,
-drawStack: [90]rl.Vector2, // maybe unused?
+drawStack: [Scene.polyCount]rl.Vector2, // maybe unused?
 //transforms: [90]root.Transform2D,
-colliding: std.bit_set.IntegerBitSet(90),
+colliding: std.bit_set.IntegerBitSet(Scene.polyCount),
 //collisionPairs: []struct{usize,usize},
 
-pub fn init(self: *@This(), random: std.Random, gpa: std.mem.Allocator) !void {
+pub fn init(self: *@This(), random: std.Random, gpa: std.mem.Allocator,
+    io: std.Io
+) !void {
     //_ = .{&self,scene};
     self.selected = .empty;
     self.current = -1;
     self.colliding = .initEmpty();
+    self.io = io;
     _ = gpa;
     //self.collisionPairs = try gpa.alloc(struct{usize,usize},1);
 
@@ -31,8 +37,8 @@ pub fn init(self: *@This(), random: std.Random, gpa: std.mem.Allocator) !void {
     self.scene.vertices = undefined;
     for (&self.scene.objects, 0..) |*obj, i| {
         const mem = self.scene.vertices[i * count .. i * count + count];
-        obj.* = .initRegular(mem, count, random.float(f32) * 30 + 20,
-        	root.randomVec2(random).multiply(root.screenV().scale(0.7)).add(.init(60,60)));
+        obj.* = .initRegular(mem, count, random.float(f32) * 16 + 10,
+        	root.randomVec2(random).multiply(root.screenV().scale(0.8)).add(.init(60,60)));
         obj.aABBcache = obj.aABB();
         if (i < 90) self.drawStack[i] = root.randomVec2(random)
             .scale(500);
@@ -73,16 +79,6 @@ pub fn update(self: *@This(), delta: f32) !void {
         self.transform = .none;
     }
 
-    // check whether the mouse touches a polygon's bounding box
-    var found = false;
-    if (self.transform != .none and self.pressed) for (self.scene.objects, 0..) |poly, i| {
-        if (rl.checkCollisionPointRec(mouse, poly.aABBcache)) {
-            self.current = @intCast(i);
-            found = true;
-        }
-    };
-    self.current = if (found or self.transform != .none) self.current else -1;
-
     // full collision detection process
     const checkCollisionPoly = comptime struct { 
     fn f(mem: []rl.Vector2, poly1: Polygon2D, poly2: Polygon2D) bool {
@@ -100,6 +96,19 @@ pub fn update(self: *@This(), delta: f32) !void {
         @as([]rl.Vector2,&self.collisionAxes), checkCollisionPoly,
         &self.colliding, handleIdPair);
 
+
+    // check whether the mouse touches a polygon's bounding box
+    var found = false;
+    if (self.transform != .none and rl.isMouseButtonDown(.left))
+    for (self.scene.objects, 0..) |poly, i| {
+        if (rl.checkCollisionPointRec(mouse, poly.aABBcache)) {
+            self.current = @intCast(i);
+            found = true;
+        }
+    };
+
+    self.current = if (found or self.transform != .none) self.current else -1;
+
     // rotates or translates the currently selected polygon.
     // TODO implement scaling
     if (self.current >= 0 and self.transform != .none) {
@@ -115,30 +124,23 @@ pub fn update(self: *@This(), delta: f32) !void {
     }
 }
 
-pub fn draw(self: *@This()) void {
+pub fn draw(self: @This()) void {
     defer rl.drawFPS(30, 30);
 
-    //self.colliding = .initEmpty();
-    for (self.scene.objects[0 .. self.scene.objects.len - 1], 0..) |poly, i| {
-        // for (self.scene.objects[i+1..], i+1..) |poly2,j| {
-        //     if (!poly.aABBcache.checkCollision(poly2.aABBcache)) continue;
+    const drawPolys = comptime struct { 
+    fn f(polys: []const Polygon2D, offset: usize, bitset: @TypeOf(self.colliding)) void {
+        for (polys, offset..) |poly, i| {
+            poly.draw(.{
+                .fill = if (bitset.isSet(i)) .red else .dark_gray,
+                .outline = null});
+        }
+    } }.f;
 
-        //     if (poly.collisionDepth(poly2, &self.aux) > 0.0) {
-        //         self.colliding.set(i);
-        //         self.colliding.set(j);
-        //     }
-        // }
+    const objcount = self.scene.objects.len;
 
-        //rl.drawRectangleLinesEx(poly.aABBcache, 2.1, .blue);
+    drawPolys(self.scene.objects[0..objcount], 0, self.colliding);
 
-        poly.draw(.{
-            .fill = .dark_gray,
-            .outline = .{
-                .color = if (self.colliding.isSet(i)) .red else .white, 
-                .thick = 3.2 } });
-    }
-    self.scene.objects[self.scene.objects.len - 1]
-        .draw(.{ .fill = null, .outline = .{ .color = .white, .thick = 3.2 } });
+
 
     // const hull: Polygon2D = .initHull(&self.scene.vertices, std.heap.page_allocator);
     // for (self.hulls) |hull|
