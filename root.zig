@@ -13,9 +13,10 @@ pub const Shape2D = Interface(.{
     .position = fn (Inner) rl.Vector2,
 }, null);
 
-pub fn SceneT(Polygon2D: type, comptime vCount: usize) type { return struct {
-    pub const vertCount: usize = 90*vCount;
-    pub const polyCount: usize = 90;
+pub fn SceneT(Polygon2D: type, comptime vCount: usize, pCount: usize
+) type { return struct {
+    pub const vertCount: usize = pCount*vCount;
+    pub const polyCount: usize = pCount;
     pub const vertPerPoly: usize = vCount;
 
     vertices: [vertCount]rl.Vector2,
@@ -316,6 +317,38 @@ pub fn randomVec2Radial(r: std.Random) rl.Vector2 {
     const l = r.float(f32);
     const theta = r.float(f32) * tau;
     return (rl.Vector2{.x = @cos(theta), .y = @sin(theta)}).scale(l);
+}
+
+pub fn initMesh(vertexBuf: []const f32, indexBuf: []const c_ushort) rl.Mesh {
+    var out = std.mem.zeroes(rl.Mesh);
+    std.debug.assert(out.vaoId == 0);
+    out.vertexCount = @intCast(indexBuf.len);
+    out.triangleCount = @intCast(indexBuf.len / 3);
+    
+    out.vertices = @alignCast(@ptrCast(rl.memAlloc(
+        @intCast(@sizeOf(f32) * vertexBuf.len))));
+    out.indices = @alignCast(@ptrCast(rl.memAlloc(
+        @intCast(@sizeOf(c_ushort) * indexBuf.len))));
+
+    std.mem.copyForwards(f32, out.vertices[0..vertexBuf.len], vertexBuf);
+    std.mem.copyForwards(c_ushort, out.indices[0..indexBuf.len], indexBuf);
+
+    out.texcoords = @alignCast(@ptrCast(rl.memAlloc(
+        @intCast(@sizeOf(f32) * out.vertexCount * 2))));
+    out.normals = @alignCast(@ptrCast(rl.memAlloc(
+        @intCast(@sizeOf(f32) * out.vertexCount * 3))));
+
+    for (0..@intCast(out.vertexCount)) |i| {
+        out.texcoords[2*i]     = 0;
+        out.texcoords[2*i + 1] = 0;
+
+        out.normals[3*i]     = 0;
+        out.normals[3*i + 1] = 0;
+        out.normals[3*i + 2] = 1; // WATCH OUT: COULD BE -1
+    }
+
+    rl.uploadMesh(&out, true);
+    return out;
 }
 
 pub fn screenV() rl.Vector2 {
