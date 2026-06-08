@@ -1,7 +1,8 @@
-const NUMERO_LADOS = 9;
+const NUMERO_LADOS = 5;
+const NUMERO_POLIGONOS = 300;
 
 pub const root = @import("polysim");
-pub const Scene = root.SceneT(@This(), NUMERO_LADOS);
+pub const Scene = root.SceneT(@This(), NUMERO_LADOS, NUMERO_POLIGONOS);
 const rl = root.rl;
 const std = root.std;
 const tau = std.math.tau;
@@ -155,6 +156,9 @@ const DrawOptions = struct {
 	fill: ?rl.Color,
 	outline: ?struct{color:rl.Color, thick:f32},
 };
+
+/// currently unoptimized. Naive triangulation leads to `n` drawTriangle calls
+/// which can be potentially reduced
 pub fn draw(self: @This(), options: DrawOptions) void { 
 	const c = self.center();
 	const l = self.vertices.len;
