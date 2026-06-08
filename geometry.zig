@@ -41,7 +41,8 @@ pub fn broadPhaseBruteForce(Shape2D: type, shapes: []Shape2D,
             if (!rl.checkCollisionRecs(shape.aABB(), shape2.aABB())) continue;
 
             if (checkCollisionPrecise(context, shape, shape2))
-                handleIdPair(handleIdPairCtx, i,j);
+                //handleIdPair(handleIdPairCtx, i,j);
+                @call(.always_inline, handleIdPair,.{handleIdPairCtx,i,j});
         }
     }
 }
@@ -55,51 +56,87 @@ pub fn broadPhaseBruteForce(Shape2D: type, shapes: []Shape2D,
 /// whether to evaluate the interval immediately or store it and handle it later.
 pub fn broadPhaseSweepAndPrune(Shape2D: type, shapes: []Shape2D,
     context: anytype, checkCollisionPrecise: fn(@TypeOf(context),Shape2D,Shape2D) bool,
-    handleIdPairCtx: anytype, handleIdPair: fn (@TypeOf(handleIdPairCtx),usize,usize) void
+    handleIdPairCtx: anytype, handleIdPair: fn (@TypeOf(handleIdPairCtx),usize,usize) void, io: std.Io
 ) void {
     //comptime root.Shape2D.validation.satisfiedBy(Shape2D);
 
     // sort shapes by axis
-    const lessThan = comptime struct { fn inner(_: void, x: Shape2D, y: Shape2D
+    const lessThan = comptime struct { fn inner(_: void, a: Shape2D, b: Shape2D
     ) bool {
-        return x.aABB().x < y.aABB().y;
+        return a.aABB().x < b.aABB().x;
     } }.inner;
+
+    const x: std.Io.Clock = .cpu_thread;
+    const start = x.now(io);
     std.mem.sortUnstable(Shape2D, shapes, {}, lessThan); // assuming the sorting
         // implementation is pattern-defeating quicksort, future calls of this
         // function should take roughly O(n) time since the geometry isn't expected
         // to change drastically from one iteration to the next, otherwise, this
         // approach would be barely better than brute force, and differences
         // wouldn't be noticeable until reasonably large data sets
+    const end = x.now(io);
+
+    std.debug.print("sorting time: {i}\n", .{start.durationTo(end).nanoseconds});
+
+    const HandleIdPairClosure = comptime struct {
+        const Capture = struct { 
+            ctx: @TypeOf(handleIdPairCtx),
+            //@"fn": @TypeOf(handleIdPair),
+            offset: usize,
+        };
+
+        fn f(self: Capture, i: usize, j: usize) void {
+            handleIdPair(self.ctx, i+self.offset, j+self.offset);
+        }
+    };
+
+    //_ = HandleIdPairClosure;
 
     // build active intervals and bruteforce check for each.
-    var interval: struct{usize,usize} = undefined;
-    var i: usize = 0;
-    for (shapes[0..shapes.len-1]) |shape|  {
-        if (i == shapes.len-1) break;
-        interval = .{i,i};
-
-        for (shapes[i..], i..) |shape2, j| {
-            const r1, const r2 = struct{rl.Rectangle,rl.Rectangle}
-                {shape.aABB(), shape2.aABB()};
-            
-            // check if the shadows of the rectangles intersect in the `x` axis
-            if (root.intersection(f32, .{r1.x, r1.x+r1.width},
-                .{r2.x, r2.x+r2.width}) > 0.0
-            ) {
-                // increment the current interval
-                interval[1] = j;
-            } else if (interval[1] > interval[0]) {
-                broadPhaseBruteForce(Shape2D, shapes[interval[0]..interval[1]],
-                    context, checkCollisionPrecise, handleIdPairCtx, handleIdPair);
-
-                // VERY IMPORTANT STATEMENT. The fact that i jumps to j after the
-                // inner for loop is done is the whole reason this should run in 
-                // O(n) time
-                i = j;
-                break;
-            } else break;
-
+    var interval: struct{usize,usize} = .{0,0};
+    for (shapes[0..shapes.len-1], 0..) |shape, i|  {
+        const shape2 = shapes[i+1];
+        const r1, const r2 =
+            struct{rl.Rectangle,rl.Rectangle}{shape.aABB(), shape2.aABB()};
+        if (root.intersection(f32, .{r1.x, r1.x+r1.width},
+            .{r2.x, r2.x+r2.width}) > 0.0) {
+            interval[1] = i+1;
+        } else if (interval[1] > interval[0]) {
+            broadPhaseBruteForce(Shape2D, shapes[interval[0]..interval[1]+1],
+                context, checkCollisionPrecise,
+                HandleIdPairClosure.Capture{.ctx = handleIdPairCtx,
+                    .offset = interval[0]},
+                HandleIdPairClosure.f);
+                //handleIdPairCtx, handleIdPair);
+            interval[0] = interval[1];
         }
-        i += 1;
+
+        // for (shapes[i..], i..) |shape2, j| {
+        //     const r1, const r2 = struct{rl.Rectangle,rl.Rectangle}
+        //         {shape.aABB(), shape2.aABB()};
+            
+        //     // check if the shadows of the rectangles intersect in the `x` axis
+        //     if (root.intersection(f32, .{r1.x, r1.x+r1.width},
+        //         .{r2.x, r2.x+r2.width}) > 0.0
+        //     ) {
+        //         // increment the current interval
+        //         interval[1] = j;
+        //     } else if (interval[1] > interval[0]) {
+        //         std.debug.print("bruteforce checking collisions in range {any}"
+        //             ++ " and {any}\n", .{interval[0], interval[1]});
+        //         broadPhaseBruteForce(Shape2D, shapes[interval[0]..interval[1]],
+        //             context, checkCollisionPrecise,
+        //             HandleIdPairClosure.Capture { .ctx = handleIdPairCtx,
+        //                 .offset = interval[0]
+        //             }, HandleIdPairClosure.f);
+
+        //         // VERY IMPORTANT STATEMENT. The fact that i jumps to j after the
+        //         // inner for loop is done is the whole reason this should run in 
+        //         // O(n) time
+        //         i = j;
+        //         break;
+        //     } else break;
+
+        // }
     }
 }
