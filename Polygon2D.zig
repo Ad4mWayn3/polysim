@@ -9,6 +9,7 @@ const tau = std.math.tau;
 
 vertices: []rl.Vector2,
 aABBcache: rl.Rectangle = undefined,
+centerCache: rl.Vector2 = undefined,
 comptime gpa: std.mem.Allocator = std.heap.page_allocator,
 
 pub fn cast(self: @This()) []rl.Vector2 { return self.vertices; }
@@ -23,6 +24,10 @@ pub fn collisionDepth(self: @This(), other: @This(), mem: []rl.Vector2) f32 {
 	const a2 = other.axes(mem[self.vertices.len..]);
 	var axs: rl.Vector2 = undefined;
 	return root.minCollisionDepthAxes(self.cast(), other.cast(), mem[0..a1.len+a2.len], &axs);
+}
+
+fn initGL(self: @This()) void {
+	_ = self;
 }
 
 pub fn minMaxAxis(self: @This(), axs: rl.Vector2,
@@ -83,7 +88,11 @@ pub fn init(vertices: []rl.Vector2) @This() {
 pub fn transform(self: *@This(), f: rl.Matrix) *@This() {
 	for (self.vertices) |*v|
 		v.* = v.transform(f);
-	self.aABBcache = self.aABBCalc();
+	//self.aABBcache =
+	_ =
+		self.aABBCalc();
+	_ = 
+		self.centerCalc();
 	return self;
 }
 
@@ -120,7 +129,7 @@ pub fn aABB(self: @This()) rl.Rectangle {
 	return self.aABBcache;
 }
 
-fn aABBCalc(self: *@This()) rl.Rectangle {
+pub fn aABBCalc(self: *@This()) rl.Rectangle {
 	var xmin = self.vertices[0].x;
 	var xmax = xmin;
 	var ymin = self.vertices[0].y;
@@ -145,11 +154,16 @@ pub fn axes(self: @This(), buf: []rl.Vector2) []rl.Vector2 {
 	return buf[0..len];
 }
 
-pub fn center(self: @This()) rl.Vector2 {
+pub fn centerCalc(self: *@This()) rl.Vector2 {
 	var res = rl.Vector2.zero();
 	for (self.vertices) |vertex|
 		res = res.add(vertex);
-	return res.scale(1.0/@as(f32,@floatFromInt(self.vertices.len)));
+	self.centerCache = res.scale(1.0/@as(f32,@floatFromInt(self.vertices.len)));
+	return self.centerCache;
+}
+
+pub fn center(self: @This()) rl.Vector2 {
+	return self.centerCache;
 }
 
 const DrawOptions = struct {

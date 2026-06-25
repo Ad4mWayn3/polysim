@@ -56,7 +56,7 @@ pub fn broadPhaseBruteForce(Shape2D: type, shapes: []Shape2D,
 /// whether to evaluate the interval immediately or store it and handle it later.
 pub fn broadPhaseSweepAndPrune(Shape2D: type, shapes: []Shape2D,
     context: anytype, checkCollisionPrecise: fn(@TypeOf(context),Shape2D,Shape2D) bool,
-    handleIdPairCtx: anytype, handleIdPair: fn (@TypeOf(handleIdPairCtx),usize,usize) void, io: std.Io
+    handleIdPairCtx: anytype, handleIdPair: fn (@TypeOf(handleIdPairCtx),usize,usize) void
 ) void {
     //comptime root.Shape2D.validation.satisfiedBy(Shape2D);
 
@@ -66,17 +66,17 @@ pub fn broadPhaseSweepAndPrune(Shape2D: type, shapes: []Shape2D,
         return a.aABB().x < b.aABB().x;
     } }.inner;
 
-    const x: std.Io.Clock = .cpu_thread;
-    const start = x.now(io);
+    //const x: std.Io.Clock = .cpu_thread;
+    //const start = x.now(io);
     std.mem.sortUnstable(Shape2D, shapes, {}, lessThan); // assuming the sorting
         // implementation is pattern-defeating quicksort, future calls of this
         // function should take roughly O(n) time since the geometry isn't expected
         // to change drastically from one iteration to the next, otherwise, this
         // approach would be barely better than brute force, and differences
         // wouldn't be noticeable until reasonably large data sets
-    const end = x.now(io);
+    //const end = x.now(io);
 
-    std.debug.print("sorting time: {i}\n", .{start.durationTo(end).nanoseconds});
+    //std.debug.print("sorting time: {d}\n", .{start.durationTo(end).nanoseconds});
 
     const HandleIdPairClosure = comptime struct {
         const Capture = struct { 

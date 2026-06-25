@@ -188,10 +188,73 @@ pub const Transform2D = struct {
     }
 };
 
+pub const Mesh2D = struct {
+    vertices: []f32,
+    // uses c_int instead of usize for trivial compatibility with C APIs
+    colors: ?[]u8,
+    indices: ?[]c_int,
+    vaoId: c_int = 0,
+    vboId: struct {
+        positions: c_int = 0,
+        colors: c_int = 0,
+        indices: c_int = 0,
+    },
+
+    const attribLayout = .{
+        .position = 0,
+        .color = 1,
+    };
+
+    /// uploads the buffers to gpu, generates buffer and array objects
+    pub fn upload(mesh: *@This()) void {
+        // the buffer objects should all be null at this point
+        std.debug.assert(mesh.vaoId + mesh.vboId.positions
+            + mesh.vboId.colors + mesh.vboId.indices == 0);
+
+        mesh.vaoId = rl.gl.rlLoadVertexArray();
+        _ = rl.gl.rlEnableVertexArray(@intCast(mesh.vaoId));
+
+        // set position attribute and buffer
+        mesh.vboId.positions = rl.gl.rlLoadVertexBuffer(mesh.vertices,
+            @intCast(mesh.vertices.len * @sizeOf(f32)), true);
+        rl.gl.rlSetVertexAttribute(attribLayout.position, 2, rl.gl.rl_float,
+            false, @intCast(2*@sizeOf(f32)), 0);
+        rl.gl.rlEnableVertexAttribute(attribLayout.position);
+
+        // set color attribute and buffer (if enabled)
+        if (mesh.colors) |colors| {
+            // 4 bytes are expected per color (r, g, b, a)
+            std.debug.assert(colors.len % 4 == 0);
+            mesh.vboId.colors = rl.gl.rlLoadVertexBuffer(colors,
+                @intCast(colors.len * @sizeOf(u8)), true);
+            rl.gl.rlSetVertexAttribute(attribLayout.color, 4,
+                rl.gl.rl_unsigned_byte, false, @intCast(4*@sizeOf(u8)), 0);
+            rl.gl.rlEnableVertexAttribute(attribLayout.color);
+        }
+
+        // set index buffer (if enabled)
+        if (mesh.indices) |indices| {
+            mesh.vboId.indices = rl.gl.rlLoadVertexBufferElement(indices,
+                @intCast(indices.len * @sizeOf(c_int)), true);
+        }
+
+        rl.gl.rlDisableVertexArray();
+    }
+
+    pub fn draw(mesh: @This()) void {
+        _ = mesh;
+    }
+};
+
 pub const HullSplit = struct {
     hull: []rl.Vector2,
     inner: []rl.Vector2,
 };
+
+pub fn ArrayLike(T: type, Context: type) type { return struct {
+    atPtr: fn (ctx: Context, xs: anytype, idx: usize) *T,
+    at: fn (ctx: Context, xs: anytype, idx: usize) T,
+};}
 
 /// Reorders `vertices` to appear conterclockwise. Starts in the direction of
 /// `min`.
@@ -201,6 +264,26 @@ pub fn sortCounterclockwiseMin(vertices: []rl.Vector2, min: rl.Vector2) void {
         ) bool {
             return wedge(x.subtract(origin),y.subtract(origin)) < 0.0;
         }}.lessThan);
+}
+
+/// Creates a simple triangulation using the first vertex as a common one.
+/// Index must be an integer type. Memory cleanup is the caller's responsibility.
+pub fn triangulateSorted(vertices: []const rl.Vector2, gpa: std.mem.Allocator,
+    comptime Index: type
+) ![]Index {
+    // any triangulation will result in n-2 triangles, where n is the number of
+    // vertices, assuming the vertex sequence forms a simple polygon.
+    var indices = try gpa.alloc(Index, (vertices.len-2) * 3);
+    if (vertices.len < 3) return error.TooFewVertices;
+
+    for (0..vertices.len-2) |i| {
+        const j = 3*i;
+        indices[j] = 0;
+        indices[j+1] = @intCast(i+1);
+        indices[j+2] = @intCast(i+2);
+    }
+
+    return indices;
 }
 
 /// Splits the vertices into `hull` and `inner` keeping their clockwise order; `inner`

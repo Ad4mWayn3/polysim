@@ -3,97 +3,14 @@ const Polygon2D = @import("Polygon2D");
 const Sim = @import("Sim");
 const std = root.std;
 const rl = root.rl;
+const rlgl = rl.gl;
 const rgui = root.rgui;
 
 const tau = std.math.tau;
 
 var sim: Sim = undefined;
 
-fn initMesh(vertexBuf: []const f32, indexBuf: []const c_ushort) rl.Mesh {
-    var out = std.mem.zeroes(rl.Mesh);
-    std.debug.assert(out.vaoId == 0);
-    out.vertexCount = @intCast(indexBuf.len);
-    out.triangleCount = @intCast(indexBuf.len / 3);
-    
-    out.vertices = @alignCast(@ptrCast(rl.memAlloc(
-        @intCast(@sizeOf(f32) * vertexBuf.len))));
-    out.indices = @alignCast(@ptrCast(rl.memAlloc(
-        @intCast(@sizeOf(c_ushort) * indexBuf.len))));
-
-    std.mem.copyForwards(f32, out.vertices[0..vertexBuf.len], vertexBuf);
-    std.mem.copyForwards(c_ushort, out.indices[0..indexBuf.len], indexBuf);
-
-    out.texcoords = @alignCast(@ptrCast(rl.memAlloc(
-        @intCast(@sizeOf(f32) * out.vertexCount * 2))));
-    out.normals = @alignCast(@ptrCast(rl.memAlloc(
-        @intCast(@sizeOf(f32) * out.vertexCount * 3))));
-
-    for (0..@intCast(out.vertexCount)) |i| {
-        out.texcoords[2*i]     = 0;
-        out.texcoords[2*i + 1] = 0;
-
-        out.normals[3*i]     = 0;
-        out.normals[3*i + 1] = 0;
-        out.normals[3*i + 2] = 1; // WATCH OUT: COULD BE -1
-    }
-
-    rl.uploadMesh(&out, true);
-    return out;
-}
-
-pub fn main() !void  {
-    rl.setTraceLogLevel(.warning);
-    rl.initWindow(1920, 1080, "mesh rendering");
-    defer rl.closeWindow();
-
-    var mesh: rl.Mesh =
-        initMesh(&.{
-            30,-30,0,
-            30,30,0,
-            -30,30,0,
-            -30,-30,0,
-        }, &.{
-            0,1,2,
-            0,2,3,
-        });
-        //rl.genMeshPoly(4, 40);
-        //rl.genMeshCube(30,30,30);
-
-    defer mesh.unload();
-    const material: rl.Material = try rl.loadMaterialDefault();
-
-    const camera: rl.Camera = .{
-        .position = .{.x=0, .y=0, .z=90},
-        .target = .{.x=0, .y=0, .z=0},
-        .fovy = 45,
-        .up = .{.x=0, .y=1, .z=0},
-        .projection = .perspective,
-    };
-    
-    const colors =  [_]u8{
-        0xff, 0x00, 0x00, 0xff,
-        0x00, 0xff, 0x00, 0xff,
-    };
-
-    rl.updateMeshBuffer(mesh,
-        rl.gl.rl_default_shader_attrib_location_color, &colors, 6, 0);
-
-    while (!rl.windowShouldClose()) {
-        //rl.updateCamera(&camera, .orbital);
-
-        rl.beginDrawing();
-        rl.drawFPS(10,10);
-        rl.clearBackground(.black);
-
-        rl.beginMode3D(camera);
-        mesh.draw(material, .identity());
-        rl.endMode3D();
-
-        rl.endDrawing();
-    }
-}
-
-pub fn _main(init: std.process.Init) !void {
+pub fn main(init: std.process.Init) !void {
     // initialize window
     rl.setTraceLogLevel(.warning);
     rl.setExitKey(.null);
@@ -115,13 +32,107 @@ pub fn _main(init: std.process.Init) !void {
         // defer update.await(init.io) catch unreachable;
 
         rl.beginDrawing();
-        defer rl.endDrawing();
         rl.clearBackground(.black);
-        const simcopy = sim;
-        var draw = init.io.async(Sim.draw, .{simcopy});
-        defer draw.await(init.io);
-        // sim.draw();
-
+        //const simcopy = sim;
+        var draw = init.io.async(Sim.draw, .{sim});
         try sim.update(rl.getFrameTime());
+        draw.await(init.io);
+        //sim.draw();
+        rl.drawFPS(30,30);
+        rl.endDrawing();
+    }
+}
+
+const vertex =
+\\#version 330 core
+\\layout (location = 0) in vec2 pos;
+\\layout (location = 1) in vec3 color;
+\\out vec3 outColor;
+\\void main() {
+\\  gl_Position = vec4(pos,0.,1.);
+\\  outColor = color;
+\\}
+;
+
+const fragment =
+\\#version 330 core
+\\in vec3 outColor;
+\\out vec4 fragColor;
+\\void main() {
+\\  fragColor = vec4(outColor,1.);
+\\}
+;
+
+var vertices: [2*7]f32 = undefined;
+
+const colors = [_]f32{
+    1,1,1,
+    1,0,0,
+    1,1,0,
+    0,1,0,
+    0,1,1,
+    0,0,1,
+    1,0,1,
+};
+
+const indices = [_]u16{
+    0,1,2,
+    0,2,3,
+    0,3,4,
+    0,4,5,
+    0,5,6,
+    0,6,1,
+};
+
+pub fn _main() !void {
+    rl.initWindow(600, 600, "rlTriangle!");
+    defer rl.closeWindow();
+
+    const vao = rlgl.rlLoadVertexArray();
+    if (!rlgl.rlEnableVertexArray(vao)) unreachable;
+
+    vertices[0..2].* = .{0,0};
+
+    for (0..6) |i| {
+        const fi: f32 = @floatFromInt(i);
+        const theta = fi * tau/6;
+        vertices[2 + 2*i] = @cos(theta);
+        vertices[2 + 2*i+1] = @sin(theta);
+    }
+
+    const vbo = rlgl.rlLoadVertexBuffer(&vertices, @sizeOf(@TypeOf(vertices)),
+        false);
+    rlgl.rlSetVertexAttribute(0, 2, rlgl.rl_float, false, 0, 0);
+    rlgl.rlEnableVertexAttribute(0);
+    defer rlgl.rlUnloadVertexBuffer(vbo);
+
+    const colorBO = rlgl.rlLoadVertexBuffer(&colors, @sizeOf(@TypeOf(colors)),
+        false);
+    rlgl.rlSetVertexAttribute(1, 3, rlgl.rl_float, false, 0, 0);
+    rlgl.rlEnableVertexAttribute(1);
+    defer rlgl.rlUnloadVertexBuffer(colorBO);
+
+    const ebo = rlgl.rlLoadVertexBufferElement(&indices, @sizeOf(@TypeOf(indices)),
+        false);
+    defer rlgl.rlUnloadVertexBuffer(ebo);
+
+    const shader = try rl.loadShaderFromMemory(vertex, fragment);
+    defer rl.unloadShader(shader);
+
+    rlgl.rlDisableVertexArray();
+
+    while (!rl.windowShouldClose()) {
+        rl.beginDrawing();
+        rl.clearBackground(.black);
+
+        _ = rlgl.rlEnableVertexArray(vao);
+        rlgl.rlEnableShader(shader.id);
+            //rlgl.rlEnableVertexBufferElement(ebo);
+            rlgl.rlDrawVertexArrayElements(0, indices.len, null);
+            //rlgl.rlDisableVertexBufferElement();
+        rlgl.rlDisableShader();
+        rlgl.rlDisableVertexArray();
+
+        rl.endDrawing();
     }
 }

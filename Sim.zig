@@ -39,7 +39,8 @@ pub fn init(self: *@This(), random: std.Random, gpa: std.mem.Allocator,
         const mem = self.scene.vertices[i * count .. i * count + count];
         obj.* = .initRegular(mem, count, random.float(f32) * 16 + 10,
         	root.randomVec2(random).multiply(root.screenV().scale(0.8)).add(.init(60,60)));
-        obj.aABBcache = obj.aABB();
+        _ = obj.aABBCalc();
+        _ = obj.centerCalc();
         if (i < 90) self.drawStack[i] = root.randomVec2(random)
             .scale(500);
             // .multiply(root.screenV());
@@ -99,7 +100,7 @@ pub fn update(self: *@This(), delta: f32) !void {
 
     // check whether the mouse touches a polygon's bounding box
     var found = false;
-    if (self.transform != .none and rl.isMouseButtonDown(.left))
+    if (self.transform != .none )
     for (self.scene.objects, 0..) |poly, i| {
         if (rl.checkCollisionPointRec(mouse, poly.aABBcache)) {
             self.current = @intCast(i);
@@ -125,8 +126,6 @@ pub fn update(self: *@This(), delta: f32) !void {
 }
 
 pub fn draw(self: @This()) void {
-    defer rl.drawFPS(30, 30);
-
     const drawPolys = comptime struct { 
     fn f(polys: []const Polygon2D, offset: usize, bitset: @TypeOf(self.colliding)) void {
         for (polys, offset..) |poly, i| {
